@@ -1,0 +1,22 @@
+{
+  "tasks": {
+    "check": "deno check supabase/functions/*/index.ts",
+    "test": "deno test supabase/functions/_shared/"
+  },
+  "lint": {
+    "include": [
+      "supabase/functions/"
+    ],
+    "rules": {
+      "exclude": [
+        "no-import-prefix"
+      ]
+    }
+  },
+  "fmt": {
+    "lineWidth": 120,
+    "include": [
+      "supabase/functions/"
+    ]
+  }
+}

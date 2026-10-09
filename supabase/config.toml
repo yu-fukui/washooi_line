@@ -1,0 +1,16 @@
+# Supabase CLI 設定（`supabase link` 後にデプロイで使用）
+project_id = "urala_line"
+
+# LINE からの Webhook と pg_cron からの呼び出しは Supabase の JWT を持たないため、
+# JWT 検証を無効にし、各関数で LINE 署名 / CRON_SECRET を検証する
+[functions.line-webhook]
+verify_jwt = false
+
+[functions.extract]
+verify_jwt = false
+
+[functions.notify]
+verify_jwt = false
+
+[functions.summary]
+verify_jwt = false
