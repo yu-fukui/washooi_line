@@ -11,6 +11,3 @@ verify_jwt = false
 
 [functions.notify]
 verify_jwt = false
-
-[functions.summary]
-verify_jwt = false

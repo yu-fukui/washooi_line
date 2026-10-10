@@ -1,7 +1,6 @@
 // 案件チャット（制作側・クライアント側）のイベント処理。案件チャットには原則発言しない。
 import { type DB, must } from "../_shared/db.ts";
 import { HELP_TEXT } from "../_shared/commands.ts";
-import { optEnv } from "../_shared/env.ts";
 import { getGroupMemberName, getGroupName, type LineEvent, reply } from "../_shared/line.ts";
 
 const MEMBER_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
@@ -68,7 +67,8 @@ async function handleRegisterMain(sb: DB, event: LineEvent, groupId: string, cod
     await reply(event.replyToken, [
       {
         type: "text",
-        text: "✅ このグループをメインチャットに登録しました。\n案件チャットのタスクを1時間ごとにここへ通知します。",
+        text:
+          "✅ このグループをメインチャットに登録しました。\n案件チャットのタスクを1日2回（9時・18時）ここへ通知します。",
       },
       { type: "text", text: HELP_TEXT },
     ]);
@@ -79,12 +79,8 @@ export async function handleProjectEvent(sb: DB, event: LineEvent, groupId: stri
   switch (event.type) {
     case "join": {
       const chat = await registerChat(sb, groupId);
+      // 案件チャットには告知しない（参加の連絡はメインチャットへの通知で行う）
       await recordChatEvent(sb, chat, "chat_joined");
-      // 参加時の告知（任意）。JOIN_MESSAGE を設定した場合のみ返信する（返信は無料）
-      const joinMessage = optEnv("JOIN_MESSAGE", "");
-      if (joinMessage && event.replyToken) {
-        await reply(event.replyToken, [{ type: "text", text: joinMessage }]);
-      }
       return;
     }
 
