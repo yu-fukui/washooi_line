@@ -28,3 +28,9 @@ Deno.test("parseCommand: 普通の会話には反応しない", () => {
   assertEquals(parseCommand("一覧表を作りました"), null);
   assertEquals(parseCommand("種別 3 その他"), null);
 });
+
+Deno.test("parseCommand: 案件の選択", () => {
+  assertEquals(parseCommand("案件"), { type: "pickProject" });
+  assertEquals(parseCommand("クライアント"), { type: "pickProject" });
+  assertEquals(parseCommand("案件を選ぶ"), { type: "pickProject" });
+});

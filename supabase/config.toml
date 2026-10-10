@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.notify]
 verify_jwt = false
+
+[functions.setup-richmenu]
+verify_jwt = false

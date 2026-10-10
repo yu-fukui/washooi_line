@@ -1,7 +1,7 @@
 // 案件チャット（制作側・クライアント側）のイベント処理。案件チャットには原則発言しない。
-import { type DB, must } from "../_shared/db.ts";
+import { type DB, getSetting, must } from "../_shared/db.ts";
 import { HELP_TEXT } from "../_shared/commands.ts";
-import { getGroupMemberName, getGroupName, type LineEvent, reply } from "../_shared/line.ts";
+import { getGroupMemberName, getGroupName, type LineEvent, linkRichMenu, reply } from "../_shared/line.ts";
 
 const MEMBER_REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -69,6 +69,11 @@ export async function handleRegisterMain(sb: DB, event: LineEvent, groupId: stri
     return;
   }
   must(await sb.rpc("set_main_group", { p_group_id: groupId }));
+  // 1対1トーク（ユーザーID）なら、作成済みのリッチメニューを表示する
+  const richMenuId = await getSetting(sb, "richmenu_id");
+  if (richMenuId && groupId.startsWith("U")) {
+    await linkRichMenu(groupId, richMenuId).catch((e) => console.warn("rich menu link failed", e));
+  }
   if (event.replyToken) {
     await reply(event.replyToken, [
       {

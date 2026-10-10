@@ -232,3 +232,43 @@ export function formatChatList(chats: ChatView[]): string {
   );
   return `💬 チャット一覧\n${lines.join("\n")}`;
 }
+
+export interface DoneTaskView {
+  id: number;
+  title: string;
+  completed_at: string | null;
+}
+
+/** 案件の詳細（チャット・未完了タスク・最近完了したタスク） */
+export function formatProjectDetail(
+  projectName: string,
+  chats: ChatView[],
+  openTasks: TaskView[],
+  recentDone: DoneTaskView[],
+  today: string,
+): string {
+  const sections: string[] = [`🗂 ${projectName}`];
+  sections.push(
+    chats.length
+      ? `💬 チャット\n${chats.map((c) => `・#${c.id} ${chatName(c)}（${KIND_LABEL[c.kind]}）`).join("\n")}`
+      : "💬 チャット：なし（会話履歴の取り込みのみ）",
+  );
+  const open = openTasks.filter((t) => t.status === "open" || t.status === "candidate").sort(sortByDue);
+  if (open.length === 0) {
+    sections.push("📋 未完了のタスクはありません 🎉");
+  } else {
+    const lines = open.map((t) => {
+      const prefix = t.status === "candidate" ? "❓候補 " : "";
+      return `${prefix}${taskLine(t)}${dueMark(t.due_date, today)}`;
+    });
+    sections.push(`📋 未完了 ${open.length}件\n${lines.join("\n")}`);
+  }
+  if (recentDone.length) {
+    const lines = recentDone.map((t) => {
+      const date = t.completed_at ? formatDue(t.completed_at.slice(0, 10)) : "";
+      return `✅ #${t.id} ${t.title}${date ? `（${date}）` : ""}`;
+    });
+    sections.push(`最近の完了\n${lines.join("\n")}`);
+  }
+  return sections.join("\n\n");
+}

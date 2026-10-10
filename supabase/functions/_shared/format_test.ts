@@ -3,6 +3,7 @@ import {
   buildCandidateFlex,
   type EventView,
   formatNotification,
+  formatProjectDetail,
   formatSummary,
   formatTaskList,
   type TaskView,
@@ -102,4 +103,34 @@ Deno.test("formatSummary", () => {
   assertStringIncludes(text, "📅 7日以内 1件");
   assertStringIncludes(text, "それ以降 1件 / 期限未定 1件");
   assertEquals(formatSummary([], "2026-10-09"), null);
+});
+
+Deno.test("formatProjectDetail", () => {
+  const text = formatProjectDetail(
+    "ミーシェ様",
+    [
+      { id: 3, name: "ミーシェ様撮影グループ", kind: "client", projectName: "ミーシェ様" },
+      { id: 4, name: null, kind: "internal", projectName: "ミーシェ様" },
+    ],
+    [
+      task({ id: 2, title: "B", due_date: "2026-10-16", projectName: "ミーシェ様" }),
+      task({ id: 1, title: "A", status: "candidate", projectName: "ミーシェ様" }),
+      task({ id: 9, title: "済", status: "done", projectName: "ミーシェ様" }),
+    ],
+    [{ id: 5, title: "動画納品", completed_at: "2026-10-07T00:00:00Z" }],
+    "2026-10-10",
+  );
+  assertStringIncludes(text, "🗂 ミーシェ様");
+  assertStringIncludes(text, "・#3 ミーシェ様撮影グループ（クライアント）");
+  assertStringIncludes(text, "・#4 チャット#4（制作）");
+  assertStringIncludes(text, "📋 未完了 2件\n#2 B");
+  assertStringIncludes(text, "❓候補 #1 A");
+  assertStringIncludes(text, "✅ #5 動画納品（10/7(水)）");
+  assert(!text.includes("済"));
+});
+
+Deno.test("formatProjectDetail: タスク・チャットなし", () => {
+  const text = formatProjectDetail("山一建設", [], [], [], "2026-10-10");
+  assertStringIncludes(text, "チャット：なし");
+  assertStringIncludes(text, "未完了のタスクはありません");
 });

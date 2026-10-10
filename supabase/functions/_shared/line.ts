@@ -91,6 +91,24 @@ export async function getGroupName(groupId: string): Promise<string | null> {
   }
 }
 
+/** ユーザー（1対1トーク）にリッチメニューを表示する */
+export async function linkRichMenu(userId: string, richMenuId: string): Promise<void> {
+  await call(`/user/${userId}/richmenu/${richMenuId}`, { method: "POST" });
+}
+
+/** リッチメニューを作成して画像をアップロードし、ID を返す */
+export async function createRichMenu(menu: LineMessage, image: Uint8Array<ArrayBuffer>): Promise<string> {
+  const res = await call("/richmenu", { method: "POST", body: JSON.stringify(menu) });
+  const { richMenuId } = await res.json();
+  const upload = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env("LINE_CHANNEL_ACCESS_TOKEN")}`, "Content-Type": "image/png" },
+    body: image,
+  });
+  if (!upload.ok) throw new Error(`rich menu image upload failed: ${upload.status} ${await upload.text()}`);
+  return richMenuId;
+}
+
 const TEXT_LIMIT = 5000;
 
 /** 長文を LINE のテキスト上限（5000字）で行単位に分割し、テキストメッセージにする */

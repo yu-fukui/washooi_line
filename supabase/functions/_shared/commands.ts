@@ -4,6 +4,7 @@ export type Command =
   | { type: "list"; keyword: string | null }
   | { type: "chats" }
   | { type: "projects" }
+  | { type: "pickProject" }
   | { type: "status"; action: "done" | "delete" | "reopen" | "approve"; taskIds: number[] }
   | { type: "due"; taskId: number; value: string }
   | { type: "assign"; taskId: number; name: string }
@@ -28,6 +29,7 @@ export function parseCommand(input: string): Command | null {
   if (/^(ヘルプ|help|使い方)$/i.test(text)) return { type: "help" };
   if (/^(チャット一覧|チャット)$/.test(text)) return { type: "chats" };
   if (/^案件一覧$/.test(text)) return { type: "projects" };
+  if (/^(案件|クライアント|案件を選ぶ)$/.test(text)) return { type: "pickProject" };
 
   let m = text.match(/^一覧(?: (.+))?$/);
   if (m) return { type: "list", keyword: m[1] ?? null };
@@ -66,6 +68,7 @@ export const HELP_TEXT = `📖 使い方（メインチャット）
 担当 12 田中 … 担当変更
 
 ■ チャットと案件
+案件 … 案件（クライアント）を選んで詳細を表示（リッチメニューの「案件を選ぶ」でも可）
 チャット一覧 … ボットが入っているチャット
 案件一覧 … 案件の一覧
 紐付け 3 案件名 … チャット#3を案件に紐付け（制作・クライアントのチャットを1案件にまとめる）
