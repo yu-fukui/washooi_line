@@ -56,13 +56,18 @@ async function loadEvents(sb: DB, rows: EventRow[]): Promise<EventView[]> {
 
 Deno.serve(async (req) => {
   if (!isCronRequest(req)) return json({ error: "unauthorized" }, 401);
-  const withSummary = (await req.json().catch(() => ({})))?.summary === true;
+  const body = await req.json().catch(() => ({}));
+  const withSummary = body?.summary === true;
+  // {"test": true} はメインチャット（1対1）にだけ送る試し送信。通知済みの記録はしない
+  const isTest = body?.test === true;
   const sb = db();
 
   if (withSummary) await refreshChatNames(sb);
 
   // 通知先グループが登録されていればそこへ、なければメインチャットへ送る
-  const target = (await getSetting(sb, "notify_group_id")) ?? (await getSetting(sb, "main_group_id"));
+  const target = isTest
+    ? await getSetting(sb, "main_group_id")
+    : (await getSetting(sb, "notify_group_id")) ?? (await getSetting(sb, "main_group_id"));
   if (!target) return json({ skipped: "メインチャット未登録" });
 
   const rows = must(
@@ -89,10 +94,10 @@ Deno.serve(async (req) => {
   if (messages.length > 0) {
     await push(target, messages, crypto.randomUUID());
   }
-  if (rows.length > 0) {
+  if (rows.length > 0 && !isTest) {
     must(
       await sb.from("events").update({ notified_at: new Date().toISOString() }).in("id", rows.map((r) => r.id)),
     );
   }
-  return json({ sent: messages.length > 0, events: rows.length, summary: !!summary });
+  return json({ sent: messages.length > 0, events: rows.length, summary: !!summary, test: isTest });
 });
