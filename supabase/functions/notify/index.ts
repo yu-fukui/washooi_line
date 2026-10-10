@@ -7,6 +7,17 @@ import { buildCandidateFlex, type EventView, formatNotification, formatSummary }
 import { getGroupName, type LineMessage, push, textMessages } from "../_shared/line.ts";
 import { loadChats, loadOpenTasks, loadTasksByIds } from "../_shared/queries.ts";
 
+const MENU_QUICK_REPLY = {
+  items: [
+    { type: "action", action: { type: "message", label: "タスク一覧", text: "一覧" } },
+    {
+      type: "action",
+      action: { type: "postback", label: "案件を選ぶ", data: "action=projects&page=0", displayText: "案件を選ぶ" },
+    },
+    { type: "action", action: { type: "postback", label: "ヘルプ", data: "action=help", displayText: "ヘルプ" } },
+  ],
+};
+
 interface EventRow {
   id: number;
   kind: string;
@@ -63,6 +74,8 @@ Deno.serve(async (req) => {
   const messages: LineMessage[] = [];
   if (text) messages.push(...textMessages(text, flex ? 4 : 5));
   if (flex) messages.push(flex);
+  // 通知先がグループだとリッチメニューが出ないため、一覧・案件選択をクイックリプライで出す
+  if (messages.length > 0) messages[messages.length - 1].quickReply = MENU_QUICK_REPLY;
 
   if (messages.length > 0) {
     await push(target, messages, crypto.randomUUID());

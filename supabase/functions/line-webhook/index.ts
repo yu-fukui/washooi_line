@@ -1,4 +1,5 @@
 // LINE Webhook: 案件チャットの会話を保存し、メインチャットのコマンド・ボタン操作に応答する
+import { parseCommand } from "../_shared/commands.ts";
 import { type DB, db, getSetting } from "../_shared/db.ts";
 import { env } from "../_shared/env.ts";
 import { type LineEvent, reply, verifySignature } from "../_shared/line.ts";
@@ -7,6 +8,12 @@ import { handleProjectEvent, handleRegisterMain, matchMainRegister } from "./pro
 
 // Supabase Edge Runtime: レスポンスを返した後もバックグラウンド処理を続けさせる
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
+
+/** 通知先グループで、メインチャットの操作として扱うイベント（候補カードのボタン・決まった形のコマンド） */
+function isMainOperation(event: LineEvent): boolean {
+  if (event.type === "postback") return true;
+  return event.type === "message" && !!event.message?.text && parseCommand(event.message.text) !== null;
+}
 
 async function handleEvents(sb: DB, events: LineEvent[]) {
   const mainGroupId = await getSetting(sb, "main_group_id");
@@ -21,10 +28,11 @@ async function handleEvents(sb: DB, events: LineEvent[]) {
 
       if (chatId === mainGroupId) {
         await handleMainEvent(sb, event, chatId);
-      } else if (chatId === notifyGroupId) {
-        // 通知先グループ: ボタンとコマンドだけ受け付ける（メンバー同士の会話を指示と誤解しないよう、AI での読み取りはしない）
+      } else if (chatId === notifyGroupId && isMainOperation(event)) {
+        // 通知先グループ: ボタンと決まった形のコマンドはメインチャットと同じく処理する
         await handleMainEvent(sb, event, chatId, { instructions: false });
       } else if (groupId) {
+        // 通知先グループのそれ以外の会話は、案件チャットとして記録・解析する
         await handleProjectEvent(sb, event, groupId);
       } else if (event.type === "message" && event.replyToken) {
         const code = event.message?.text ? matchMainRegister(event.message.text) : null;

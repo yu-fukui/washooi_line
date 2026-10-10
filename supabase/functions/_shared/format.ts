@@ -256,7 +256,9 @@ export function formatSummary(tasks: TaskView[], today: string): string | null {
   const rest: string[] = [];
   if (later.length) rest.push(`それ以降 ${later.length}件`);
   if (noDue.length) rest.push(`期限未定 ${noDue.length}件`);
-  if (rest.length) sections.push(`ほか ${rest.join(" / ")}（「一覧」で確認できます）`);
+  if (rest.length) {
+    sections.push(`ほか ${rest.join(" / ")}（下の「タスク一覧」ボタンか、「一覧」と送ると確認できます）`);
+  }
   return sections.join("\n\n");
 }
 

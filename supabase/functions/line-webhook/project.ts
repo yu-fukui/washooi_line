@@ -78,8 +78,7 @@ export async function handleRegisterMain(sb: DB, event: LineEvent, groupId: stri
     await reply(event.replyToken, [
       {
         type: "text",
-        text:
-          "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを毎朝6時にここへ通知します。",
+        text: "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを毎朝6時にここへ通知します。",
       },
       { type: "text", text: HELP_TEXT },
     ]);
