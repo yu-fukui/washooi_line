@@ -189,3 +189,17 @@ Deno.test("formatSummaryHeader", () => {
   assertStringIncludes(text, "今日まで 1件");
   assertEquals(formatSummaryHeader([], "2026-10-10"), null);
 });
+
+Deno.test("buildSummaryCarousel: 確認待ち・連絡待ちのタスクは赤字", () => {
+  const flex = buildSummaryCarousel([
+    task({ id: 4, title: "修正版の確認待ち", projectId: 1 }),
+    task({ id: 5, title: "通常のタスク", projectId: 1 }),
+  ], "2026-10-10")!;
+  // deno-lint-ignore no-explicit-any
+  const rows = (flex as any).contents.contents[0].body.contents;
+  assertEquals(rows[0].contents[0].text, "⏳#4 修正版の確認待ち");
+  assertEquals(rows[0].contents[0].color, "#D93025");
+  assertEquals(rows[0].contents[1].color, "#D93025");
+  assertEquals(rows[1].contents[0].color, undefined);
+  assertEquals(rows[1].contents[1].color, "#888888");
+});

@@ -263,6 +263,13 @@ export function formatSummary(tasks: TaskView[], today: string): string | null {
   return sections.join("\n\n");
 }
 
+const ALERT_COLOR = "#D93025";
+
+/** 「確認待ち」「連絡待ち」など、相手の返事を待っているタスク（タイトルに「待ち」を含む） */
+export function isWaiting(t: { title: string }): boolean {
+  return t.title.includes("待ち");
+}
+
 const MAX_SUMMARY_BUBBLES = 12; // カルーセルは最大12枚
 const MAX_TASKS_PER_BUBBLE = 8;
 
@@ -299,16 +306,23 @@ export function buildSummaryCarousel(tasks: TaskView[], today: string): LineMess
     const list = byProject.get(name)!.sort(sortByDue);
     const rows = list.slice(0, MAX_TASKS_PER_BUBBLE).map((t) => {
       const mark = dueMark(t.due_date, today);
+      const waiting = isWaiting(t);
       return {
         type: "box",
         layout: "vertical",
         contents: [
-          { type: "text", text: `#${t.id} ${t.title}`, size: "sm", wrap: true },
+          {
+            type: "text",
+            text: `${waiting ? "⏳" : ""}#${t.id} ${t.title}`,
+            size: "sm",
+            wrap: true,
+            ...(waiting ? { color: ALERT_COLOR } : {}),
+          },
           {
             type: "text",
             text: `${who(t)} ⏰${formatDue(t.due_date)}${mark}`,
             size: "xs",
-            color: mark ? "#D93025" : "#888888",
+            color: mark || waiting ? ALERT_COLOR : "#888888",
             wrap: true,
           },
         ],
