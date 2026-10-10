@@ -3,7 +3,13 @@ import { type Command, HELP_TEXT, parseCommand } from "../_shared/commands.ts";
 import { formatDue, parseDateInput, todayJst } from "../_shared/dates.ts";
 import { type DB, must } from "../_shared/db.ts";
 import { resolveAssignee } from "../_shared/extraction.ts";
-import { formatChatList, formatProjectDetail, formatTaskList } from "../_shared/format.ts";
+import {
+  formatChatList,
+  formatProjectDetail,
+  formatTaskList,
+  nextDueByProject,
+  projectOrder,
+} from "../_shared/format.ts";
 import { type LineEvent, type LineMessage, reply, textMessages } from "../_shared/line.ts";
 import { loadChats, loadOpenTasks, loadTasksByIds } from "../_shared/queries.ts";
 
@@ -85,21 +91,27 @@ const RECENT_DONE_DAYS = 14;
 
 const label = (text: string) => (text.length > 20 ? text.slice(0, 19) + "…" : text);
 
-/** 案件（クライアント）を選ぶクイックリプライ。未完了タスクが多い順 */
+/** 案件（クライアント）を選ぶクイックリプライ。期限が近いタスクがある案件から順に並べる */
 async function projectPicker(sb: DB, page: number): Promise<LineMessage> {
   const projects = must(await sb.from("projects").select("id, name").order("name")) as { id: number; name: string }[];
   if (projects.length === 0) return { type: "text", text: "案件はまだありません。" };
   const open = await loadOpenTasks(sb);
   const count = new Map<string, number>();
   for (const t of open) count.set(t.projectName, (count.get(t.projectName) ?? 0) + 1);
-  const sorted = projects.sort((a, b) => (count.get(b.name) ?? 0) - (count.get(a.name) ?? 0));
+  const nextDue = nextDueByProject(open);
+  const order = projectOrder(open);
+  const rank = (name: string) => (order.includes(name) ? order.indexOf(name) : order.length);
+  const sorted = projects.sort((a, b) => rank(a.name) - rank(b.name) || a.name.localeCompare(b.name, "ja"));
+  const shortDue = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
 
   const start = page * PICKER_PAGE_SIZE;
   const items = sorted.slice(start, start + PICKER_PAGE_SIZE).map((p) => ({
     type: "action",
     action: {
       type: "postback",
-      label: label(`${p.name}（${count.get(p.name) ?? 0}）`),
+      label: label(
+        `${p.name}（${count.get(p.name) ?? 0}件${nextDue.has(p.name) ? `・${shortDue(nextDue.get(p.name)!)}` : ""}）`,
+      ),
       data: `action=project&id=${p.id}`,
       displayText: p.name,
     },
@@ -112,7 +124,8 @@ async function projectPicker(sb: DB, page: number): Promise<LineMessage> {
   }
   return {
     type: "text",
-    text: "どの案件（クライアント）を表示しますか？\n下のボタンから選んでください。（ ）内は未完了タスク数です",
+    text:
+      "どの案件（クライアント）を表示しますか？\n期限が近い順に並んでいます。（ ）内は未完了タスク数・直近の期限です",
     quickReply: { items },
   };
 }

@@ -179,6 +179,40 @@ function dueMark(due: string | null, today: string): string {
   return "";
 }
 
+/**
+ * 案件（クライアント）を、未完了タスクの期限が近い順に並べた案件名の配列を返す。
+ * 期限のあるタスクがない案件は後ろ（未完了タスクが多い順、同数なら名前順）。
+ */
+export function projectOrder(tasks: TaskView[]): string[] {
+  const stats = new Map<string, { nextDue: string | null; count: number }>();
+  for (const t of tasks) {
+    if (t.status !== "open" && t.status !== "candidate") continue;
+    const s = stats.get(t.projectName) ?? { nextDue: null, count: 0 };
+    s.count++;
+    if (t.due_date && (!s.nextDue || t.due_date < s.nextDue)) s.nextDue = t.due_date;
+    stats.set(t.projectName, s);
+  }
+  return [...stats].sort(([an, a], [bn, b]) => {
+    if (a.nextDue !== b.nextDue) {
+      if (!a.nextDue) return 1;
+      if (!b.nextDue) return -1;
+      return a.nextDue < b.nextDue ? -1 : 1;
+    }
+    return b.count - a.count || an.localeCompare(bn, "ja");
+  }).map(([name]) => name);
+}
+
+/** 案件ごとの直近の期限（未完了タスクのうち最も早いもの） */
+export function nextDueByProject(tasks: TaskView[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const t of tasks) {
+    if ((t.status !== "open" && t.status !== "candidate") || !t.due_date) continue;
+    const cur = map.get(t.projectName);
+    if (!cur || t.due_date < cur) map.set(t.projectName, t.due_date);
+  }
+  return map;
+}
+
 /** 「一覧」コマンドの返信 */
 export function formatTaskList(tasks: TaskView[], today: string, title = "📋 未完了タスク"): string {
   const open = tasks.filter((t) => t.status === "open" || t.status === "candidate");
@@ -189,7 +223,8 @@ export function formatTaskList(tasks: TaskView[], today: string, title = "📋 �
     byProject.get(t.projectName)!.push(t);
   }
   const sections = [`${title}（${open.length}件）`];
-  for (const [project, list] of [...byProject].sort(([a], [b]) => a.localeCompare(b, "ja"))) {
+  const order = projectOrder(open);
+  for (const [project, list] of [...byProject].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))) {
     const lines = list.sort(sortByDue).map((t) => {
       const prefix = t.status === "candidate" ? "❓候補 " : "";
       return `${prefix}${taskLine(t)}${dueMark(t.due_date, today)}`;

@@ -6,6 +6,7 @@ import {
   formatProjectDetail,
   formatSummary,
   formatTaskList,
+  projectOrder,
   type TaskView,
 } from "./format.ts";
 
@@ -133,4 +134,25 @@ Deno.test("formatProjectDetail: タスク・チャットなし", () => {
   const text = formatProjectDetail("山一建設", [], [], [], "2026-10-10");
   assertStringIncludes(text, "チャット：なし");
   assertStringIncludes(text, "未完了のタスクはありません");
+});
+
+Deno.test("projectOrder: 期限が近い案件順、期限なしは件数順", () => {
+  const order = projectOrder([
+    task({ id: 1, projectName: "A", due_date: "2026-10-20" }),
+    task({ id: 2, projectName: "B", due_date: "2026-10-12" }),
+    task({ id: 3, projectName: "C" }),
+    task({ id: 4, projectName: "D" }),
+    task({ id: 5, projectName: "D" }),
+    task({ id: 6, projectName: "A", due_date: "2026-10-15", status: "candidate" }),
+    task({ id: 7, projectName: "E", due_date: "2026-10-01", status: "done" }), // 完了済みは対象外
+  ]);
+  assertEquals(order, ["B", "A", "D", "C"]);
+});
+
+Deno.test("formatTaskList: 案件は期限が近い順", () => {
+  const text = formatTaskList([
+    task({ id: 1, title: "x", projectName: "あ案件" }),
+    task({ id: 2, title: "y", projectName: "ん案件", due_date: "2026-10-12" }),
+  ], "2026-10-10");
+  assert(text.indexOf("【ん案件】") < text.indexOf("【あ案件】"));
 });
