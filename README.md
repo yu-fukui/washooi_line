@@ -94,12 +94,16 @@ https://<project-ref>.supabase.co/functions/v1/line-webhook
 | `案件名 2 新しい名前` | 案件名の変更 |
 | `ヘルプ` | 使い方 |
 
+決まった形以外の文章（「1は16日で時間未定、2は済」「波多野さんの動画確認終わった」など）は、AI が指示として読み取って修正し、結果を返信します（返信なので通数は消費しません）。削除だけは確認ボタンを出してから実行します。挨拶など指示でない文章には反応しません。
+
 ## 設定値（任意）
 
 | 環境変数 | 既定値 | 内容 |
 |---|---|---|
 | `CLAUDE_MODEL` | `claude-opus-5-5` | 解析に使うモデル。費用を抑える場合は `claude-sonnet-5-5` や `claude-haiku-5-5` も指定可（精度とのトレードオフ） |
 | `CLAUDE_EFFORT` | `medium` | 解析の深さ（`low` / `medium` / `high`） |
+| `CLAUDE_INSTRUCTION_MODEL` | `claude-haiku-5-5` | メインチャットの文章での指示を読み取るモデル（返信の期限内に返すため速いモデルを既定にしています） |
+| `CLAUDE_INSTRUCTION_EFFORT` | `low` | 指示の読み取りの深さ |
 | `EXTRACT_IDLE_MINUTES` | `10` | 最後の発言からこの分数が経ったら解析 |
 | `EXTRACT_MIN_PENDING` | `30` | 未解析がこの件数たまったら会話途中でも解析 |
 | `EXTRACT_MAX_PROJECTS` | `5` | 1回の実行で解析する案件数の上限（残りは15分後） |

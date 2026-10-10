@@ -1,4 +1,4 @@
-// メインチャット（管理用グループ）のコマンドとボタン操作。応答はすべて返信（無料）。
+// メインチャット（管理用グループ / 1対1）のコマンド・普通の文章での指示・ボタン操作。応答は返信（無料）。
 import { type Command, HELP_TEXT, parseCommand } from "../_shared/commands.ts";
 import { formatDue, parseDateInput, todayJst } from "../_shared/dates.ts";
 import { type DB, must } from "../_shared/db.ts";
@@ -10,7 +10,8 @@ import {
   nextDueByProject,
   projectOrder,
 } from "../_shared/format.ts";
-import { type LineEvent, type LineMessage, reply, textMessages } from "../_shared/line.ts";
+import { type InstructionOp, type InstructionTask, interpretWithClaude } from "../_shared/instruction.ts";
+import { type LineEvent, type LineMessage, push, reply, textMessages } from "../_shared/line.ts";
 import { loadChats, loadOpenTasks, loadTasksByIds } from "../_shared/queries.ts";
 
 type Status = "candidate" | "open" | "done" | "dismissed";
@@ -246,13 +247,205 @@ async function runCommand(sb: DB, cmd: Command, actor: string): Promise<string> 
   }
 }
 
-export async function handleMainEvent(sb: DB, event: LineEvent, _groupId: string) {
+/** 期限 "none" → null、日付 → そのまま */
+const dueValue = (due: string) => (due === "none" ? null : due);
+
+/** AIが読み取った操作の内容・担当・期限を反映する。変更点の説明を返す */
+async function applyEdits(sb: DB, task: InstructionTask & { projectId: number }, op: InstructionOp, actor: string) {
+  const patch: Record<string, unknown> = {};
+  const changes: string[] = [];
+  if (op.title && op.title !== task.title) {
+    patch.title = op.title;
+    changes.push(`内容→「${op.title}」`);
+  }
+  if (op.due && dueValue(op.due) !== task.due) {
+    patch.due_date = dueValue(op.due);
+    changes.push(`期限→${formatDue(dueValue(op.due))}`);
+  }
+  if (op.assignee) {
+    const who = resolveAssignee(op.assignee, await projectMembers(sb, task.projectId));
+    if (who.name && who.name !== task.assignee) {
+      patch.assignee_id = who.id;
+      patch.assignee_name = who.name;
+      changes.push(`担当→${who.name}`);
+    }
+  }
+  if (changes.length === 0) return [];
+  must(await sb.from("tasks").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", task.id));
+  await logManual(sb, task.id, task.projectId, "edit", actor, patch);
+  return changes;
+}
+
+async function loadInstructionTasks(sb: DB) {
+  const since = new Date(Date.now() - RECENT_DONE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const columns = "id, project_id, title, status, assignee_name, due_date";
+  type Row = {
+    id: number;
+    project_id: number;
+    title: string;
+    status: InstructionTask["status"];
+    assignee_name: string | null;
+    due_date: string | null;
+  };
+  const active = must(
+    await sb.from("tasks").select(columns).in("status", ["open", "candidate"]).order("id").limit(500),
+  ) as Row[];
+  const recent = must(
+    await sb.from("tasks").select(columns).in("status", ["done", "dismissed"]).gte("updated_at", since)
+      .order("id").limit(100),
+  ) as Row[];
+  const projects = must(await sb.from("projects").select("id, name").order("name")) as { id: number; name: string }[];
+  const names = new Map(projects.map((p) => [p.id, p.name]));
+  const tasks = [...active, ...recent].map((r) => ({
+    id: r.id,
+    projectId: r.project_id,
+    status: r.status,
+    projectName: names.get(r.project_id) ?? `案件#${r.project_id}`,
+    title: r.title,
+    assignee: r.assignee_name,
+    due: r.due_date,
+  }));
+  return { tasks, projects };
+}
+
+function findProject(projects: { id: number; name: string }[], name: string) {
+  const norm = (s: string) => s.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  const target = norm(name);
+  return projects.find((p) => norm(p.name) === target) ??
+    projects.filter((p) => norm(p.name).includes(target) || target.includes(norm(p.name)))
+      .sort((a, b) => b.name.length - a.name.length)[0];
+}
+
+/** 普通の文章の指示を AI で読み取って実行する。指示でなければ null */
+async function handleInstruction(sb: DB, text: string, actor: string): Promise<LineMessage[] | null> {
+  const { tasks, projects } = await loadInstructionTasks(sb);
+  const result = await interpretWithClaude({
+    today: todayJst(),
+    projects: projects.map((p) => p.name),
+    tasks,
+    text,
+  });
+  if (!result.is_instruction) return null;
+
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const lines: string[] = [];
+  const toDelete: number[] = [];
+  const statusAction: Partial<Record<InstructionOp["action"], string>> = {
+    complete: "done",
+    approve: "approve",
+    reopen: "reopen",
+  };
+
+  for (const op of result.ops) {
+    if (op.action === "create") {
+      const project = op.project ? findProject(projects, op.project) : undefined;
+      if (!project || !op.title) {
+        lines.push(`「${op.title ?? ""}」を追加する案件が分かりませんでした（案件名を添えてください）`);
+        continue;
+      }
+      const who = resolveAssignee(op.assignee, await projectMembers(sb, project.id));
+      const created = must(
+        await sb.from("tasks").insert({
+          project_id: project.id,
+          title: op.title,
+          assignee_id: who.id,
+          assignee_name: who.name,
+          due_date: op.due ? dueValue(op.due) : null,
+          status: "open",
+          confidence: 1,
+          evidence: "メインチャットで追加",
+        }).select("id").single(),
+      ) as { id: number };
+      await logManual(sb, created.id, project.id, "create", actor, null);
+      const due = op.due && dueValue(op.due) ? `（期限 ${formatDue(dueValue(op.due))}）` : "";
+      lines.push(`#${created.id} ${project.name}「${op.title}」を追加しました${due}`);
+      continue;
+    }
+
+    const task = op.task_id !== null ? byId.get(op.task_id) : undefined;
+    if (!task) {
+      lines.push(`#${op.task_id ?? "?"} が見つかりませんでした`);
+      continue;
+    }
+    if (op.action === "delete") {
+      toDelete.push(task.id);
+      continue;
+    }
+    if (op.action === "approve" || op.action === "update") {
+      if (task.status !== "open" && task.status !== "candidate") {
+        lines.push(`#${task.id} はすでに完了・削除済みです（「戻す ${task.id}」で戻せます）`);
+        continue;
+      }
+      const changes = await applyEdits(sb, task, op, actor);
+      if (op.action === "update" || task.status === "open") {
+        lines.push(changes.length ? `#${task.id} ${changes.join("、")}` : `#${task.id} は変更ありません`);
+        continue;
+      }
+      const approved = await changeStatus(sb, "approve", [task.id], actor);
+      lines.push(changes.length ? `${approved}（${changes.join("、")}）` : approved);
+      continue;
+    }
+    lines.push(await changeStatus(sb, statusAction[op.action]!, [task.id], actor));
+  }
+
+  if (toDelete.length > 0) {
+    const list = toDelete.map((id) => `#${id} ${byId.get(id)!.title}`).join("\n");
+    lines.push(`次のタスクを削除しますか？\n${list}`);
+  }
+  if (result.note) lines.push(result.note);
+  if (lines.length === 0) lines.push("変更はありませんでした");
+  if (toDelete.length === 0 && result.ops.length > 0) {
+    lines.push("\n※ 違っていたら「戻す 番号」「期限 番号 日付」などで直せます");
+  }
+
+  const messages = textMessages(lines.join("\n"), 4);
+  if (toDelete.length > 0) {
+    const ids = toDelete.join(",");
+    messages[messages.length - 1].quickReply = {
+      items: [
+        {
+          type: "action",
+          action: { type: "postback", label: "削除する", data: `action=delete&tasks=${ids}`, displayText: "削除する" },
+        },
+        { type: "action", action: { type: "postback", label: "やめる", data: "action=cancel", displayText: "やめる" } },
+      ],
+    };
+  }
+  return messages;
+}
+
+/** 返信する。AI の処理に時間がかかり返信トークンが切れていたらプッシュで送る（通数を消費） */
+async function replyOrPush(replyToken: string, to: string, messages: LineMessage[]) {
+  try {
+    await reply(replyToken, messages);
+  } catch (e) {
+    if (!String(e).includes("Invalid reply token")) throw e;
+    console.warn("reply token expired; falling back to push");
+    await push(to, messages, crypto.randomUUID());
+  }
+}
+
+export async function handleMainEvent(sb: DB, event: LineEvent, mainChatId: string) {
   if (!event.replyToken) return;
   const actor = event.source.userId ?? "unknown";
 
   if (event.type === "message" && event.message?.type === "text" && event.message.text) {
     const cmd = parseCommand(event.message.text);
-    if (!cmd) return; // 普通の会話には反応しない
+    if (!cmd) {
+      // 決まった形のコマンドでなければ、AI で指示として読み取る（指示でなければ反応しない）
+      let messages: LineMessage[] | null;
+      try {
+        messages = await handleInstruction(sb, event.message.text, actor);
+      } catch (e) {
+        console.error("instruction failed", e);
+        messages = [{
+          type: "text",
+          text: "うまく読み取れませんでした。もう一度送るか「ヘルプ」のコマンドをお使いください。",
+        }];
+      }
+      if (messages) await replyOrPush(event.replyToken, mainChatId, messages);
+      return;
+    }
     if (cmd.type === "pickProject") {
       await reply(event.replyToken, [await projectPicker(sb, 0)]);
       return;
@@ -275,6 +468,16 @@ export async function handleMainEvent(sb: DB, event: LineEvent, _groupId: string
     }
     if (action === "help") {
       await reply(event.replyToken, [{ type: "text", text: HELP_TEXT }]);
+      return;
+    }
+    if (action === "delete") {
+      const ids = (params.get("tasks") ?? "").split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+      const text = ids.length ? await changeStatus(sb, "delete", ids, actor) : "削除するタスクがありません";
+      await reply(event.replyToken, [{ type: "text", text }]);
+      return;
+    }
+    if (action === "cancel") {
+      await reply(event.replyToken, [{ type: "text", text: "削除をやめました" }]);
       return;
     }
     if ((action === "approve" || action === "dismiss") && Number.isInteger(taskId)) {

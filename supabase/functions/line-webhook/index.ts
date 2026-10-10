@@ -1,20 +1,14 @@
 // LINE Webhook: 案件チャットの会話を保存し、メインチャットのコマンド・ボタン操作に応答する
-import { db, getSetting } from "../_shared/db.ts";
+import { type DB, db, getSetting } from "../_shared/db.ts";
 import { env } from "../_shared/env.ts";
 import { type LineEvent, reply, verifySignature } from "../_shared/line.ts";
 import { handleMainEvent } from "./main.ts";
 import { handleProjectEvent, handleRegisterMain, matchMainRegister } from "./project.ts";
 
-Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("ok");
-  const body = await req.text();
-  const valid = await verifySignature(body, req.headers.get("x-line-signature"), env("LINE_CHANNEL_SECRET"));
-  if (!valid) return new Response("invalid signature", { status: 401 });
+// Supabase Edge Runtime: レスポンスを返した後もバックグラウンド処理を続けさせる
+declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | undefined;
 
-  const events: LineEvent[] = JSON.parse(body).events ?? [];
-  if (events.length === 0) return new Response("ok"); // 検証リクエスト
-
-  const sb = db();
+async function handleEvents(sb: DB, events: LineEvent[]) {
   const mainGroupId = await getSetting(sb, "main_group_id");
 
   for (const event of events) {
@@ -42,6 +36,24 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("event handling failed", event.type, e);
     }
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method !== "POST") return new Response("ok");
+  const body = await req.text();
+  const valid = await verifySignature(body, req.headers.get("x-line-signature"), env("LINE_CHANNEL_SECRET"));
+  if (!valid) return new Response("invalid signature", { status: 401 });
+
+  const events: LineEvent[] = JSON.parse(body).events ?? [];
+  if (events.length === 0) return new Response("ok"); // 検証リクエスト
+
+  // AI での指示の読み取りは数秒かかるため、LINE にはすぐ 200 を返して処理は後で続ける
+  const work = handleEvents(db(), events);
+  if (typeof EdgeRuntime !== "undefined") {
+    EdgeRuntime.waitUntil(work);
+  } else {
+    await work;
   }
   return new Response("ok");
 });
