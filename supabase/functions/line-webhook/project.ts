@@ -56,7 +56,13 @@ async function ensureMember(sb: DB, groupId: string, chatId: number, userId: str
   );
 }
 
-async function handleRegisterMain(sb: DB, event: LineEvent, groupId: string, code: string) {
+/** 「#メイン登録 合言葉」なら合言葉を返す */
+export function matchMainRegister(text: string): string | null {
+  return text.normalize("NFKC").trim().match(/^#メイン登録\s+(\S+)$/)?.[1] ?? null;
+}
+
+/** メインチャットの登録。groupId にはグループIDか、1対1トークならユーザーIDが入る */
+export async function handleRegisterMain(sb: DB, event: LineEvent, groupId: string, code: string) {
   const expected = Deno.env.get("MAIN_REGISTER_CODE");
   if (!expected || code !== expected) {
     console.warn("main registration rejected", groupId);
@@ -68,7 +74,7 @@ async function handleRegisterMain(sb: DB, event: LineEvent, groupId: string, cod
       {
         type: "text",
         text:
-          "✅ このグループをメインチャットに登録しました。\n案件チャットのタスクを1日2回（9時・18時）ここへ通知します。",
+          "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを1日2回（9時・18時）ここへ通知します。",
       },
       { type: "text", text: HELP_TEXT },
     ]);
@@ -107,9 +113,9 @@ export async function handleProjectEvent(sb: DB, event: LineEvent, groupId: stri
       const message = event.message;
       if (!message || message.type !== "text" || !message.text) return;
 
-      const register = message.text.normalize("NFKC").trim().match(/^#メイン登録\s+(\S+)$/);
-      if (register) {
-        await handleRegisterMain(sb, event, groupId, register[1]);
+      const code = matchMainRegister(message.text);
+      if (code) {
+        await handleRegisterMain(sb, event, groupId, code);
         return;
       }
 

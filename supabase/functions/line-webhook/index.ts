@@ -3,7 +3,7 @@ import { db, getSetting } from "../_shared/db.ts";
 import { env } from "../_shared/env.ts";
 import { type LineEvent, reply, verifySignature } from "../_shared/line.ts";
 import { handleMainEvent } from "./main.ts";
-import { handleProjectEvent } from "./project.ts";
+import { handleProjectEvent, handleRegisterMain, matchMainRegister } from "./project.ts";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("ok");
@@ -20,19 +20,24 @@ Deno.serve(async (req) => {
   for (const event of events) {
     try {
       const groupId = event.source.type === "group" ? event.source.groupId : undefined;
-      if (!groupId) {
-        if (event.type === "message" && event.replyToken) {
+      // メインチャットは管理用グループでも、ボットとの1対1トークでもよい
+      const chatId = groupId ?? (event.source.type === "user" ? event.source.userId : undefined);
+      if (!chatId) continue;
+
+      if (chatId === mainGroupId) {
+        await handleMainEvent(sb, event, chatId);
+      } else if (groupId) {
+        await handleProjectEvent(sb, event, groupId);
+      } else if (event.type === "message" && event.replyToken) {
+        const code = event.message?.text ? matchMainRegister(event.message.text) : null;
+        if (code) {
+          await handleRegisterMain(sb, event, chatId, code);
+        } else {
           await reply(event.replyToken, [{
             type: "text",
-            text: "このボットは案件グループに招待して使います。タスクは管理用グループに通知されます。",
+            text: "このボットは案件グループに招待して使います。タスクは管理用のメインチャットに通知されます。",
           }]);
         }
-        continue;
-      }
-      if (groupId === mainGroupId) {
-        await handleMainEvent(sb, event, groupId);
-      } else {
-        await handleProjectEvent(sb, event, groupId);
       }
     } catch (e) {
       console.error("event handling failed", event.type, e);
