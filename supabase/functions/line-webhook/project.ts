@@ -74,7 +74,7 @@ export async function handleRegisterMain(sb: DB, event: LineEvent, groupId: stri
       {
         type: "text",
         text:
-          "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを1日2回（9時・18時）ここへ通知します。",
+          "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを1日2回（6時・18時）ここへ通知します。",
       },
       { type: "text", text: HELP_TEXT },
     ]);

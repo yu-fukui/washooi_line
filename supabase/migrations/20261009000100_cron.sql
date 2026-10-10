@@ -25,10 +25,10 @@ revoke execute on function invoke_function(text, jsonb) from public, anon, authe
 select cron.schedule('extract-tasks', '*/15 * * * *', $$select invoke_function('extract')$$);
 
 -- メインチャットへの通知: 1日2回
---   9:00 JST  … 夜間〜朝の更新 + 全案件の未完了タスクのサマリー
+--   6:00 JST  … 夜間〜朝の更新 + 全案件の未完了タスクのサマリー
 --   18:00 JST … 日中の更新
 -- 2つとも1回のプッシュにまとめて送る（LINEの通数はプッシュ1回 × メンバー数）
-select cron.schedule('notify-morning', '0 0 * * *', $$select invoke_function('notify', '{"summary": true}'::jsonb)$$);
+select cron.schedule('notify-morning', '0 21 * * *', $$select invoke_function('notify', '{"summary": true}'::jsonb)$$);
 select cron.schedule('notify-evening', '0 9 * * *', $$select invoke_function('notify')$$);
 
 -- 会話データの保存期間: 1年（毎日 3:00 JST に削除）

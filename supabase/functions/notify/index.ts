@@ -1,4 +1,4 @@
-// 1日2回（9:00 / 18:00）: 未通知のタスク変化をまとめてメインチャットへ送る。
+// 1日2回（6:00 / 18:00）: 未通知のタスク変化をまとめてメインチャットへ送る。
 // 朝の回（body: {"summary": true}）は全案件の未完了タスクのサマリーも同じプッシュで送り、グループ名も更新する。
 import { formatDateTimeJst, todayJst } from "../_shared/dates.ts";
 import { type DB, db, getSetting, must } from "../_shared/db.ts";
