@@ -58,14 +58,17 @@ Deno.serve(async (req) => {
   if (!isCronRequest(req)) return json({ error: "unauthorized" }, 401);
   const body = await req.json().catch(() => ({}));
   const withSummary = body?.summary === true;
-  // {"test": true} はメインチャット（1対1）にだけ送る試し送信。通知済みの記録はしない
+  // {"test": true} は試し送信。通知済みの記録はしない。送り先は既定でメインチャット（1対1）、
+  // {"to": "notify"} なら通知先グループ。{"intro": "..."} は冒頭に添える文
   const isTest = body?.test === true;
+  const toNotifyGroup = body?.to === "notify";
+  const intro = typeof body?.intro === "string" && body.intro.trim() ? body.intro.trim() : null;
   const sb = db();
 
   if (withSummary) await refreshChatNames(sb);
 
   // 通知先グループが登録されていればそこへ、なければメインチャットへ送る
-  const target = isTest
+  const target = isTest && !toNotifyGroup
     ? await getSetting(sb, "main_group_id")
     : (await getSetting(sb, "notify_group_id")) ?? (await getSetting(sb, "main_group_id"));
   if (!target) return json({ skipped: "メインチャット未登録" });
@@ -83,7 +86,7 @@ Deno.serve(async (req) => {
   const flex = buildCandidateFlex(events.filter((e) => e.kind === "candidate" && e.task).map((e) => e.task!));
 
   // テキスト（更新 → 朝のあいさつ）・案件別カルーセル・候補カードを1回のプッシュ（最大5メッセージ）にまとめる
-  const text = [updates, summary].filter((t): t is string => !!t).join("\n\n━━━━━━━━━━\n\n");
+  const text = [intro, updates, summary].filter((t): t is string => !!t).join("\n\n━━━━━━━━━━\n\n");
   const cards = [carousel, flex].filter((m): m is LineMessage => !!m);
   const messages: LineMessage[] = [];
   if (text) messages.push(...textMessages(text, 5 - cards.length));
