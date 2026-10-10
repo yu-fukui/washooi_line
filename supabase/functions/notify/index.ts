@@ -3,7 +3,13 @@
 import { formatDateTimeJst, todayJst } from "../_shared/dates.ts";
 import { type DB, db, getSetting, must } from "../_shared/db.ts";
 import { isCronRequest, json } from "../_shared/env.ts";
-import { buildCandidateFlex, type EventView, formatNotification, formatSummary } from "../_shared/format.ts";
+import {
+  buildCandidateFlex,
+  buildSummaryCarousel,
+  type EventView,
+  formatNotification,
+  formatSummaryHeader,
+} from "../_shared/format.ts";
 import { getGroupName, type LineMessage, push, textMessages } from "../_shared/line.ts";
 import { loadChats, loadOpenTasks, loadTasksByIds } from "../_shared/queries.ts";
 
@@ -66,14 +72,17 @@ Deno.serve(async (req) => {
   const events = await loadEvents(sb, rows);
 
   const updates = formatNotification(events, `🔔 タスク更新（${formatDateTimeJst(new Date().toISOString())}）`);
-  const summary = withSummary ? formatSummary(await loadOpenTasks(sb, false), todayJst()) : null;
+  const openTasks = withSummary ? await loadOpenTasks(sb, false) : [];
+  const summary = withSummary ? formatSummaryHeader(openTasks, todayJst()) : null;
+  const carousel = withSummary ? buildSummaryCarousel(openTasks, todayJst()) : null;
   const flex = buildCandidateFlex(events.filter((e) => e.kind === "candidate" && e.task).map((e) => e.task!));
 
-  // テキスト（更新 → サマリー）と候補カードを1回のプッシュ（最大5メッセージ）にまとめる
+  // テキスト（更新 → 朝のあいさつ）・案件別カルーセル・候補カードを1回のプッシュ（最大5メッセージ）にまとめる
   const text = [updates, summary].filter((t): t is string => !!t).join("\n\n━━━━━━━━━━\n\n");
+  const cards = [carousel, flex].filter((m): m is LineMessage => !!m);
   const messages: LineMessage[] = [];
-  if (text) messages.push(...textMessages(text, flex ? 4 : 5));
-  if (flex) messages.push(flex);
+  if (text) messages.push(...textMessages(text, 5 - cards.length));
+  messages.push(...cards);
   // 通知先がグループだとリッチメニューが出ないため、一覧・案件選択をクイックリプライで出す
   if (messages.length > 0) messages[messages.length - 1].quickReply = MENU_QUICK_REPLY;
 

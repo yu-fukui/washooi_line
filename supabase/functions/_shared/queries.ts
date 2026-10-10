@@ -32,6 +32,7 @@ async function toViews(sb: DB, rows: TaskRow[]): Promise<TaskView[]> {
     due_date: r.due_date,
     evidence: r.evidence,
     projectName: names.get(r.project_id) ?? `案件#${r.project_id}`,
+    projectId: r.project_id,
   }));
 }
 

@@ -11,6 +11,7 @@ export interface TaskView {
   due_date: string | null;
   evidence: string | null;
   projectName: string;
+  projectId?: number;
 }
 
 export interface ChatView {
@@ -260,6 +261,112 @@ export function formatSummary(tasks: TaskView[], today: string): string | null {
     sections.push(`ほか ${rest.join(" / ")}（下の「タスク一覧」ボタンか、「一覧」と送ると確認できます）`);
   }
   return sections.join("\n\n");
+}
+
+const MAX_SUMMARY_BUBBLES = 12; // カルーセルは最大12枚
+const MAX_TASKS_PER_BUBBLE = 8;
+
+/** 朝の通知の冒頭テキスト（件数と注意点）。未完了タスクがなければ null */
+export function formatSummaryHeader(tasks: TaskView[], today: string): string | null {
+  const open = tasks.filter((t) => t.status === "open");
+  if (open.length === 0) return null;
+  const projects = new Set(open.map((t) => t.projectName)).size;
+  const overdue = open.filter((t) => t.due_date && t.due_date < today).length;
+  const dueToday = open.filter((t) => t.due_date === today).length;
+  const lines = [
+    `☀️ おはようございます。本日 ${formatDue(today)} のタスクです（${projects}案件・未完了${open.length}件）`,
+  ];
+  if (overdue) lines.push(`⚠ 期限切れ ${overdue}件`);
+  if (dueToday) lines.push(`⏰ 今日まで ${dueToday}件`);
+  lines.push("案件ごとのカードを期限が近い順に送ります（期限未定のタスクも含みます）");
+  if (projects > MAX_SUMMARY_BUBBLES) {
+    lines.push(`※ カードは${MAX_SUMMARY_BUBBLES}案件まで。残りは「一覧」で確認できます`);
+  }
+  return lines.join("\n");
+}
+
+/** 朝の通知の案件別カルーセル（期限未定も含む全未完了タスク）。未完了タスクがなければ null */
+export function buildSummaryCarousel(tasks: TaskView[], today: string): LineMessage | null {
+  const open = tasks.filter((t) => t.status === "open");
+  if (open.length === 0) return null;
+  const byProject = new Map<string, TaskView[]>();
+  for (const t of open) {
+    if (!byProject.has(t.projectName)) byProject.set(t.projectName, []);
+    byProject.get(t.projectName)!.push(t);
+  }
+  const names = projectOrder(open).slice(0, MAX_SUMMARY_BUBBLES);
+  const bubbles = names.map((name) => {
+    const list = byProject.get(name)!.sort(sortByDue);
+    const rows = list.slice(0, MAX_TASKS_PER_BUBBLE).map((t) => {
+      const mark = dueMark(t.due_date, today);
+      return {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          { type: "text", text: `#${t.id} ${t.title}`, size: "sm", wrap: true },
+          {
+            type: "text",
+            text: `${who(t)} ⏰${formatDue(t.due_date)}${mark}`,
+            size: "xs",
+            color: mark ? "#D93025" : "#888888",
+            wrap: true,
+          },
+        ],
+      };
+    });
+    if (list.length > MAX_TASKS_PER_BUBBLE) {
+      rows.push(
+        {
+          type: "box",
+          layout: "vertical",
+          contents: [{
+            type: "text",
+            text: `ほか ${list.length - MAX_TASKS_PER_BUBBLE}件`,
+            size: "xs",
+            color: "#888888",
+          }],
+        } as (typeof rows)[number],
+      );
+    }
+    const projectId = list[0].projectId;
+    return {
+      type: "bubble",
+      size: "kilo",
+      header: {
+        type: "box",
+        layout: "vertical",
+        contents: [
+          { type: "text", text: name, weight: "bold", wrap: true },
+          { type: "text", text: `未完了 ${list.length}件`, size: "xs", color: "#888888" },
+        ],
+      },
+      body: { type: "box", layout: "vertical", spacing: "md", contents: rows },
+      ...(projectId
+        ? {
+          footer: {
+            type: "box",
+            layout: "vertical",
+            contents: [{
+              type: "button",
+              style: "secondary",
+              height: "sm",
+              action: {
+                type: "postback",
+                label: "詳細を見る",
+                data: `action=project&id=${projectId}`,
+                displayText: name,
+              },
+            }],
+          },
+        }
+        : {}),
+    };
+  });
+  return {
+    type: "flex",
+    altText: `本日のタスク（${byProject.size}案件・${open.length}件）`,
+    contents: { type: "carousel", contents: bubbles },
+  };
 }
 
 export function formatChatList(chats: ChatView[]): string {

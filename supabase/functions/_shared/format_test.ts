@@ -1,10 +1,12 @@
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1.0.13";
 import {
   buildCandidateFlex,
+  buildSummaryCarousel,
   type EventView,
   formatNotification,
   formatProjectDetail,
   formatSummary,
+  formatSummaryHeader,
   formatTaskList,
   projectOrder,
   type TaskView,
@@ -155,4 +157,35 @@ Deno.test("formatTaskList: 案件は期限が近い順", () => {
     task({ id: 2, title: "y", projectName: "ん案件", due_date: "2026-10-12" }),
   ], "2026-10-10");
   assert(text.indexOf("【ん案件】") < text.indexOf("【あ案件】"));
+});
+
+Deno.test("buildSummaryCarousel: 案件ごとのカード（期限が近い順・期限未定も含む）", () => {
+  const tasks = [
+    task({ id: 1, projectName: "B", projectId: 2, due_date: null }),
+    task({ id: 2, projectName: "A", projectId: 1, due_date: "2026-10-12" }),
+    task({ id: 3, projectName: "A", projectId: 1, due_date: "2026-10-09" }),
+    task({ id: 4, projectName: "C", status: "candidate" }),
+  ];
+  const flex = buildSummaryCarousel(tasks, "2026-10-10")!;
+  // deno-lint-ignore no-explicit-any
+  const bubbles = (flex as any).contents.contents;
+  assertEquals(bubbles.length, 2);
+  assertEquals(bubbles[0].header.contents[0].text, "A");
+  assertEquals(bubbles[0].body.contents[0].contents[0].text, "#3 タスク");
+  assertStringIncludes(bubbles[0].body.contents[0].contents[1].text, "期限切れ");
+  assertEquals(bubbles[0].footer.contents[0].action.data, "action=project&id=1");
+  assertStringIncludes(bubbles[1].body.contents[0].contents[1].text, "未定");
+  assertEquals(buildSummaryCarousel([], "2026-10-10"), null);
+});
+
+Deno.test("formatSummaryHeader", () => {
+  const text = formatSummaryHeader([
+    task({ id: 1, due_date: "2026-10-09" }),
+    task({ id: 2, due_date: "2026-10-10", projectName: "案件B" }),
+    task({ id: 3 }),
+  ], "2026-10-10")!;
+  assertStringIncludes(text, "2案件・未完了3件");
+  assertStringIncludes(text, "期限切れ 1件");
+  assertStringIncludes(text, "今日まで 1件");
+  assertEquals(formatSummaryHeader([], "2026-10-10"), null);
 });
