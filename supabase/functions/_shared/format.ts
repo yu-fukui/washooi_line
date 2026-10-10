@@ -1,5 +1,5 @@
 // メインチャットに送るメッセージの組み立て（DBに依存しない純粋関数）
-import { addDays, formatDue } from "./dates.ts";
+import { addDays, formatDue, todayJst } from "./dates.ts";
 import { type ChatKind, KIND_LABEL } from "./extraction.ts";
 import type { LineMessage } from "./line.ts";
 
@@ -265,7 +265,7 @@ export function formatProjectDetail(
   }
   if (recentDone.length) {
     const lines = recentDone.map((t) => {
-      const date = t.completed_at ? formatDue(t.completed_at.slice(0, 10)) : "";
+      const date = t.completed_at ? formatDue(todayJst(new Date(t.completed_at))) : "";
       return `✅ #${t.id} ${t.title}${date ? `（${date}）` : ""}`;
     });
     sections.push(`最近の完了\n${lines.join("\n")}`);
