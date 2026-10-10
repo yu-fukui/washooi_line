@@ -86,6 +86,28 @@ export async function handleRegisterMain(sb: DB, event: LineEvent, groupId: stri
   }
 }
 
+/** 「#通知先登録 合言葉」なら合言葉を返す */
+export function matchNotifyRegister(text: string): string | null {
+  return text.normalize("NFKC").trim().match(/^#通知先登録\s+(\S+)$/)?.[1] ?? null;
+}
+
+/** 6時・18時の通知を送るグループの登録（メインチャットとは別に設定できる） */
+export async function handleRegisterNotify(sb: DB, event: LineEvent, groupId: string, code: string) {
+  const expected = Deno.env.get("MAIN_REGISTER_CODE");
+  if (!expected || code !== expected) {
+    console.warn("notify registration rejected", groupId);
+    return;
+  }
+  must(await sb.rpc("set_notify_group", { p_group_id: groupId }));
+  if (event.replyToken) {
+    await reply(event.replyToken, [{
+      type: "text",
+      text:
+        "✅ このグループを通知先に登録しました。\n案件チャットのタスクを1日2回（6時・18時）ここへ通知します。\n候補カードの[登録][無視]ボタンや「完了 12」などのコマンドもここで使えます。",
+    }]);
+  }
+}
+
 export async function handleProjectEvent(sb: DB, event: LineEvent, groupId: string) {
   switch (event.type) {
     case "join": {
@@ -121,6 +143,11 @@ export async function handleProjectEvent(sb: DB, event: LineEvent, groupId: stri
       const code = matchMainRegister(message.text);
       if (code) {
         await handleRegisterMain(sb, event, groupId, code);
+        return;
+      }
+      const notifyCode = matchNotifyRegister(message.text);
+      if (notifyCode) {
+        await handleRegisterNotify(sb, event, groupId, notifyCode);
         return;
       }
 

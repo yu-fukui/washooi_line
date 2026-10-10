@@ -10,6 +10,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void } | unde
 
 async function handleEvents(sb: DB, events: LineEvent[]) {
   const mainGroupId = await getSetting(sb, "main_group_id");
+  const notifyGroupId = await getSetting(sb, "notify_group_id");
 
   for (const event of events) {
     try {
@@ -20,6 +21,9 @@ async function handleEvents(sb: DB, events: LineEvent[]) {
 
       if (chatId === mainGroupId) {
         await handleMainEvent(sb, event, chatId);
+      } else if (chatId === notifyGroupId) {
+        // 通知先グループ: ボタンとコマンドだけ受け付ける（メンバー同士の会話を指示と誤解しないよう、AI での読み取りはしない）
+        await handleMainEvent(sb, event, chatId, { instructions: false });
       } else if (groupId) {
         await handleProjectEvent(sb, event, groupId);
       } else if (event.type === "message" && event.replyToken) {

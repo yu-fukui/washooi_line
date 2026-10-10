@@ -1,4 +1,4 @@
-// 1日2回（6:00 / 18:00）: 未通知のタスク変化をまとめてメインチャットへ送る。
+// 1日2回（6:00 / 18:00）: 未通知のタスク変化をまとめて通知先グループ（未登録ならメインチャット）へ送る。
 // 朝の回（body: {"summary": true}）は全案件の未完了タスクのサマリーも同じプッシュで送り、グループ名も更新する。
 import { formatDateTimeJst, todayJst } from "../_shared/dates.ts";
 import { type DB, db, getSetting, must } from "../_shared/db.ts";
@@ -44,8 +44,9 @@ Deno.serve(async (req) => {
 
   if (withSummary) await refreshChatNames(sb);
 
-  const mainGroupId = await getSetting(sb, "main_group_id");
-  if (!mainGroupId) return json({ skipped: "メインチャット未登録" });
+  // 通知先グループが登録されていればそこへ、なければメインチャットへ送る
+  const target = (await getSetting(sb, "notify_group_id")) ?? (await getSetting(sb, "main_group_id"));
+  if (!target) return json({ skipped: "メインチャット未登録" });
 
   const rows = must(
     await sb.from("events").select("id, kind, task_id, chat_id, detail")
@@ -64,7 +65,7 @@ Deno.serve(async (req) => {
   if (flex) messages.push(flex);
 
   if (messages.length > 0) {
-    await push(mainGroupId, messages, crypto.randomUUID());
+    await push(target, messages, crypto.randomUUID());
   }
   if (rows.length > 0) {
     must(

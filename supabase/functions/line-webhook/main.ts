@@ -425,13 +425,19 @@ async function replyOrPush(replyToken: string, to: string, messages: LineMessage
   }
 }
 
-export async function handleMainEvent(sb: DB, event: LineEvent, mainChatId: string) {
+export async function handleMainEvent(
+  sb: DB,
+  event: LineEvent,
+  mainChatId: string,
+  opts: { instructions: boolean } = { instructions: true },
+) {
   if (!event.replyToken) return;
   const actor = event.source.userId ?? "unknown";
 
   if (event.type === "message" && event.message?.type === "text" && event.message.text) {
     const cmd = parseCommand(event.message.text);
     if (!cmd) {
+      if (!opts.instructions) return;
       // 決まった形のコマンドでなければ、AI で指示として読み取る（指示でなければ反応しない）
       let messages: LineMessage[] | null;
       try {
