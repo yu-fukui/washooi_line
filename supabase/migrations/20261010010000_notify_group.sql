@@ -1,4 +1,4 @@
--- 6時・18時の通知先グループ（メインチャットとは別に設定できる）。
+-- 毎朝6時の通知先グループ（メインチャットとは別に設定できる）。
 -- そのグループが案件チャットとして登録済みなら取り除く。
 create function set_notify_group(p_group_id text)
 returns void language plpgsql set search_path = public as $$

@@ -79,7 +79,7 @@ export async function handleRegisterMain(sb: DB, event: LineEvent, groupId: stri
       {
         type: "text",
         text:
-          "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを1日2回（6時・18時）ここへ通知します。",
+          "✅ このトークをメインチャットに登録しました。\n案件チャットのタスクを毎朝6時にここへ通知します。",
       },
       { type: "text", text: HELP_TEXT },
     ]);
@@ -91,7 +91,7 @@ export function matchNotifyRegister(text: string): string | null {
   return text.normalize("NFKC").trim().match(/^#通知先登録\s+(\S+)$/)?.[1] ?? null;
 }
 
-/** 6時・18時の通知を送るグループの登録（メインチャットとは別に設定できる） */
+/** 毎朝6時の通知を送るグループの登録（メインチャットとは別に設定できる） */
 export async function handleRegisterNotify(sb: DB, event: LineEvent, groupId: string, code: string) {
   const expected = Deno.env.get("MAIN_REGISTER_CODE");
   if (!expected || code !== expected) {
@@ -103,7 +103,7 @@ export async function handleRegisterNotify(sb: DB, event: LineEvent, groupId: st
     await reply(event.replyToken, [{
       type: "text",
       text:
-        "✅ このグループを通知先に登録しました。\n案件チャットのタスクを1日2回（6時・18時）ここへ通知します。\n候補カードの[登録][無視]ボタンや「完了 12」などのコマンドもここで使えます。",
+        "✅ このグループを通知先に登録しました。\n案件チャットのタスクを毎朝6時にここへ通知します。\n候補カードの[登録][無視]ボタンや「完了 12」などのコマンドもここで使えます。",
     }]);
   }
 }
