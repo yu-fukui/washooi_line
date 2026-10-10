@@ -4,3 +4,4 @@ supabase/.temp/
 supabase/.branches/
 node_modules/
 !.env.example
+setup_remaining.sql

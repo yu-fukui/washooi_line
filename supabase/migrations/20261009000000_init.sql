@@ -96,7 +96,7 @@ alter table events        enable row level security;
 -- グループ参加時（または未登録グループからの初回メッセージ時）にチャットを登録。
 -- 案件が未設定なら、グループ名で案件を自動作成する（同名があれば連番を付与）。
 create function register_chat(p_group_id text, p_name text)
-returns chats language plpgsql as $$
+returns chats language plpgsql set search_path = public as $$
 declare
   v_chat chats;
   v_base text;
@@ -129,7 +129,7 @@ end $$;
 -- チャットを別の案件に紐付ける（案件が無ければ作成）。
 -- 元の案件にチャットが残らなければ、タスクを移して元の案件を削除する。
 create function link_chat(p_chat_id bigint, p_project_name text)
-returns bigint language plpgsql as $$
+returns bigint language plpgsql set search_path = public as $$
 declare
   v_old bigint;
   v_new bigint;
@@ -156,7 +156,7 @@ end $$;
 
 -- メインチャットの登録。そのグループが案件チャットとして登録済みなら取り除く。
 create function set_main_group(p_group_id text)
-returns void language plpgsql as $$
+returns void language plpgsql set search_path = public as $$
 declare
   v_project bigint;
 begin
@@ -173,7 +173,7 @@ end $$;
 
 -- 解析対象の案件: 未処理メッセージがあり、会話が一段落した or 件数がたまった案件
 create function projects_due_for_extraction(p_idle_minutes int, p_min_count int)
-returns table (project_id bigint, pending bigint) language sql stable as $$
+returns table (project_id bigint, pending bigint) language sql stable set search_path = public as $$
   select c.project_id, count(*) as pending
   from messages m
   join chats c on c.id = m.chat_id
@@ -186,7 +186,7 @@ $$;
 
 -- AIの抽出結果を1トランザクションで反映し、対象メッセージを処理済みにする
 create function apply_extraction(p_project_id bigint, p_message_ids bigint[], p_ops jsonb)
-returns void language plpgsql as $$
+returns void language plpgsql set search_path = public as $$
 declare
   op jsonb;
   v_task bigint;
@@ -248,3 +248,9 @@ revoke execute on function link_chat(bigint, text)                 from public, 
 revoke execute on function set_main_group(text)                    from public, anon, authenticated;
 revoke execute on function projects_due_for_extraction(int, int)   from public, anon, authenticated;
 revoke execute on function apply_extraction(bigint, bigint[], jsonb) from public, anon, authenticated;
+
+-- Edge Functions（service_role）からの利用を明示的に許可
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant execute on all functions in schema public to service_role;
