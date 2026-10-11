@@ -13,6 +13,7 @@ import {
 import { type InstructionOp, type InstructionTask, interpretWithClaude } from "../_shared/instruction.ts";
 import { type LineEvent, type LineMessage, push, reply, textMessages } from "../_shared/line.ts";
 import { loadChats, loadOpenTasks, loadTasksByIds } from "../_shared/queries.ts";
+import { isSmallTalk } from "../_shared/smalltalk.ts";
 
 type Status = "candidate" | "open" | "done" | "dismissed";
 
@@ -437,7 +438,8 @@ export async function handleMainEvent(
   if (event.type === "message" && event.message?.type === "text" && event.message.text) {
     const cmd = parseCommand(event.message.text);
     if (!cmd) {
-      if (!opts.instructions) return;
+      // 指示を受け付けない場所、またはお礼・あいづちだけの発言には AI を呼ばない
+      if (!opts.instructions || isSmallTalk(event.message.text)) return;
       // 決まった形のコマンドでなければ、AI で指示として読み取る（指示でなければ反応しない）
       let messages: LineMessage[] | null;
       try {

@@ -11,6 +11,7 @@ import {
   type OpenTask,
   planOps,
 } from "../_shared/extraction.ts";
+import { isSmallTalk } from "../_shared/smalltalk.ts";
 
 const IDLE_MINUTES = Number(optEnv("EXTRACT_IDLE_MINUTES", "10"));
 const MIN_PENDING = Number(optEnv("EXTRACT_MIN_PENDING", "30"));
@@ -103,8 +104,10 @@ async function processProject(sb: DB, projectId: number) {
   };
 
   let ops: ReturnType<typeof planOps> = [];
+  // お礼・あいづちだけのやり取りならタスクは生まれないので、AI を呼ばずに処理済みにする
+  const onlySmallTalk = pending.every((m) => isSmallTalk(m.text));
   try {
-    ops = planOps(await extractWithClaude(input), input);
+    if (!onlySmallTalk) ops = planOps(await extractWithClaude(input), input);
   } catch (e) {
     if (!(e instanceof ExtractionRefusedError)) throw e; // 一時的なエラーは次回再試行
     // 拒否された会話は再試行しても同じ結果になるため、処理済みにして先へ進む
@@ -118,7 +121,7 @@ async function processProject(sb: DB, projectId: number) {
       p_ops: ops,
     }),
   );
-  return { projectId, messages: pending.length, ops: ops.length };
+  return { projectId, messages: pending.length, ops: ops.length, skipped: onlySmallTalk };
 }
 
 Deno.serve(async (req) => {
