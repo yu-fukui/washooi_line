@@ -6,6 +6,7 @@ import {
   parseExtraction,
   planOps,
   resolveAssignee,
+  resolveProject,
 } from "./extraction.ts";
 
 const input: ExtractionInput = {
@@ -58,6 +59,7 @@ const input: ExtractionInput = {
 const action = (a: Partial<ExtractedAction>): ExtractedAction => ({
   type: "create",
   task_id: null,
+  project: null,
   title: null,
   assignee: null,
   due: null,
@@ -180,4 +182,52 @@ Deno.test("planOps: 変化のない update は出さない", () => {
     }),
   ], input);
   assertEquals(ops, []);
+});
+
+const hub: ExtractionInput = {
+  ...input,
+  projectName: "社内",
+  projects: [
+    { id: 1, name: "社内" },
+    { id: 5, name: "エース" },
+    { id: 11, name: "止水板LP" },
+  ],
+  openTasks: [
+    { id: 5, title: "Instagramアカウント作成", assignee: null, due: null, status: "open", projectId: 5 },
+    { id: 16, title: "LP制作", assignee: null, due: "2026-10-13", status: "open", projectId: 11 },
+  ],
+};
+
+Deno.test("buildUserPrompt: 横断チャットでは案件ごとにタスクを並べる", () => {
+  const prompt = buildUserPrompt(hub);
+  assertStringIncludes(prompt, "## 案件一覧");
+  assertStringIncludes(prompt, "### 止水板LP\n- task_id=16 LP制作");
+  assertStringIncludes(prompt, "### エース\n- task_id=5 Instagramアカウント作成");
+  assert(!buildUserPrompt(input).includes("案件一覧"));
+});
+
+Deno.test("resolveProject", () => {
+  assertEquals(resolveProject("止水板LP", hub.projects), 11);
+  assertEquals(resolveProject("エース", hub.projects), 5);
+  assertEquals(resolveProject("止水板", hub.projects), 11);
+  assertEquals(resolveProject("不明な案件", hub.projects), undefined);
+  assertEquals(resolveProject("エース", undefined), undefined);
+});
+
+Deno.test("planOps: 横断チャットでは別案件のタスクにも反映し、作成先も選べる", () => {
+  const ops = planOps([
+    action({ type: "update", task_id: 16, title: "LP制作（保留）", evidence_refs: ["m2"] }),
+    action({ type: "complete", task_id: 5, evidence_refs: ["m3"] }),
+    action({ type: "create", project: "エース", title: "TikTok確認", evidence_refs: ["m4"] }),
+    action({ type: "create", project: null, title: "社内の作業", evidence_refs: ["m4"] }),
+  ], hub);
+  assertEquals(ops.map((o) => [o.op, o.project_id]), [
+    ["update", 11],
+    ["complete", 5],
+    ["create", 5],
+    ["create", undefined],
+  ]);
+  // 通常の案件チャットでは project_id を付けない
+  const normal = planOps([action({ type: "complete", task_id: 10, evidence_refs: ["m4"] })], input);
+  assertEquals("project_id" in normal[0], false);
 });

@@ -24,6 +24,12 @@ export interface OpenTask {
   assignee: string | null;
   due: string | null;
   status: "open" | "candidate";
+  projectId?: number; // 横断チャットのとき、タスクが属する案件
+}
+
+export interface ProjectInfo {
+  id: number;
+  name: string;
 }
 
 export interface ChatMessage {
@@ -41,6 +47,8 @@ export interface ExtractionInput {
   chats: ChatInfo[];
   members: MemberInfo[];
   openTasks: OpenTask[];
+  // 横断チャット（通知先グループなど）のとき、全案件の一覧。タスクの更新・作成先をここから選ぶ
+  projects?: ProjectInfo[];
   context: ChatMessage[]; // 処理済みの直前の会話（文脈用）
   messages: ChatMessage[]; // 今回解析する会話
 }
@@ -48,6 +56,7 @@ export interface ExtractionInput {
 export interface ExtractedAction {
   type: "create" | "update" | "complete";
   task_id: number | null;
+  project: string | null; // create の作成先案件（横断チャットのみ）
   title: string | null;
   assignee: string | null;
   due: string | null;
@@ -66,7 +75,9 @@ export const SYSTEM_PROMPT = `あなたは制作会社の案件チャットを�
   - 自分でやると宣言した作業（「明日までに修正版を出します」）
   - クライアントからの依頼・修正指示（担当が決まっていなくても作る）
   - 期限や納品物を伴う約束
-- update: 既存タスクの期限・担当・内容が変わった（task_id 必須）
+- update: 既存タスクの期限・担当・内容・状況が変わった（task_id 必須）
+  - 中止・保留（「一旦なしで」「ストップで」）はタイトルの末尾に「（保留）」を付ける
+  - 他の人に依頼済み・相手の返事待ちなど、まだ終わっていないが状況が進んだものはタイトルの末尾に状況を付ける（例:「（作成依頼済み）」「（確認待ち）」）
 - complete: 既存タスクが完了した報告（「送付しました」「対応済みです」「アップしました」など。task_id 必須）
   - クライアントチャットの依頼が制作チャットで完了報告されることもある。チャットをまたいで判断する
 
@@ -83,6 +94,12 @@ export const SYSTEM_PROMPT = `あなたは制作会社の案件チャットを�
 - confidence: 0〜1。依頼と引き受けが明確なら 0.8 以上、タスクかどうか曖昧なら 0.5〜0.8
 - reason: 判断理由を一文で
 
+## 横断チャット
+「案件一覧」が示されたときは、社内の横断チャットです。会話はどの案件の話でもありえます。
+- 未完了タスクは案件ごとに並んでいる。案件名や内容の言い回し（略称・表記ゆれ）から対応するタスクを探して update / complete する
+- create では project に作成先の案件名を案件一覧の表記のまま入れる。どの案件か分からなければ null
+- 案件一覧がないときは project は常に null
+
 該当する操作がなければ actions は空配列にしてください。`;
 
 export const OUTPUT_SCHEMA = {
@@ -95,10 +112,11 @@ export const OUTPUT_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "task_id", "title", "assignee", "due", "evidence_refs", "confidence", "reason"],
+        required: ["type", "task_id", "project", "title", "assignee", "due", "evidence_refs", "confidence", "reason"],
         properties: {
           type: { type: "string", enum: ["create", "update", "complete"] },
           task_id: { type: ["integer", "null"] },
+          project: { type: ["string", "null"] },
           title: { type: ["string", "null"] },
           assignee: { type: ["string", "null"] },
           due: { type: ["string", "null"], description: "YYYY-MM-DD" },
@@ -134,11 +152,26 @@ export function buildUserPrompt(input: ExtractionInput): string {
   lines.push("## メンバー");
   lines.push(input.members.length ? input.members.map((m) => m.name).join(" / ") : "(不明)");
   lines.push("");
-  lines.push("## 未完了タスク");
-  if (input.openTasks.length === 0) lines.push("(なし)");
-  for (const t of input.openTasks) {
+  const taskLine = (t: OpenTask) => {
     const status = t.status === "candidate" ? "[候補] " : "";
-    lines.push(`- task_id=${t.id} ${status}${t.title} / 担当: ${t.assignee ?? "未定"} / 期限: ${t.due ?? "未定"}`);
+    return `- task_id=${t.id} ${status}${t.title} / 担当: ${t.assignee ?? "未定"} / 期限: ${t.due ?? "未定"}`;
+  };
+  if (input.projects) {
+    lines.push("## 案件一覧");
+    for (const p of input.projects) lines.push(`- ${p.name}`);
+    lines.push("");
+    lines.push("## 未完了タスク（案件ごと）");
+    if (input.openTasks.length === 0) lines.push("(なし)");
+    for (const p of input.projects) {
+      const tasks = input.openTasks.filter((t) => t.projectId === p.id);
+      if (tasks.length === 0) continue;
+      lines.push(`### ${p.name}`);
+      for (const t of tasks) lines.push(taskLine(t));
+    }
+  } else {
+    lines.push("## 未完了タスク");
+    if (input.openTasks.length === 0) lines.push("(なし)");
+    for (const t of input.openTasks) lines.push(taskLine(t));
   }
   if (input.context.length) {
     lines.push("");
@@ -163,6 +196,7 @@ export function parseExtraction(raw: unknown): ExtractedAction[] {
     out.push({
       type: a.type,
       task_id: Number.isInteger(a.task_id) ? a.task_id : null,
+      project: str(a.project),
       title: str(a.title),
       assignee: str(a.assignee),
       due: typeof a.due === "string" && isValidDate(a.due) ? a.due : null,
@@ -206,9 +240,11 @@ export const THRESHOLDS = {
   change: 0.7, // update / complete を反映する下限
 };
 
+// project_id は横断チャットで別案件のタスクを扱うときだけ付ける（なければ解析中の案件）
 export type DbOp =
   | {
     op: "create";
+    project_id?: number;
     status: "open" | "candidate";
     title: string;
     assignee_id: string | null;
@@ -221,6 +257,7 @@ export type DbOp =
   | {
     op: "update";
     task_id: number;
+    project_id?: number;
     title?: string;
     assignee_id?: string | null;
     assignee_name?: string;
@@ -228,7 +265,22 @@ export type DbOp =
     confidence: number;
     evidence: string | null;
   }
-  | { op: "complete"; task_id: number; confidence: number; evidence: string | null };
+  | { op: "complete"; task_id: number; project_id?: number; confidence: number; evidence: string | null };
+
+const normalizeProject = (name: string) => name.normalize("NFKC").replace(/[\s　]+/g, "").toLowerCase();
+
+/** AIが返した案件名を案件一覧に対応付ける。一意に決まらなければ undefined（解析中の案件に作る） */
+export function resolveProject(name: string | null, projects: ProjectInfo[] | undefined): number | undefined {
+  if (!name || !projects) return undefined;
+  const target = normalizeProject(name);
+  const exact = projects.filter((p) => normalizeProject(p.name) === target);
+  if (exact.length === 1) return exact[0].id;
+  const partial = projects.filter((p) => {
+    const n = normalizeProject(p.name);
+    return n.includes(target) || target.includes(n);
+  });
+  return partial.length === 1 ? partial[0].id : undefined;
+}
 
 const EVIDENCE_MAX = 80;
 
@@ -254,8 +306,10 @@ export function planOps(actions: ExtractedAction[], input: ExtractionInput): DbO
     if (a.type === "create") {
       if (!a.title || a.confidence < THRESHOLDS.candidate) continue;
       const who = resolveAssignee(a.assignee, input.members);
+      const projectId = resolveProject(a.project, input.projects);
       ops.push({
         op: "create",
+        ...(projectId !== undefined ? { project_id: projectId } : {}),
         status: a.confidence >= THRESHOLDS.autoCreate ? "open" : "candidate",
         title: a.title,
         assignee_id: who.id,
@@ -271,8 +325,11 @@ export function planOps(actions: ExtractedAction[], input: ExtractionInput): DbO
     if (a.task_id === null || !openIds.has(a.task_id) || a.confidence < THRESHOLDS.change) continue;
     if (touched.has(a.task_id) && a.type === "update") continue;
 
+    const current = input.openTasks.find((t) => t.id === a.task_id)!;
+    const target = current.projectId !== undefined ? { project_id: current.projectId } : {};
+
     if (a.type === "complete") {
-      ops.push({ op: "complete", task_id: a.task_id, confidence: a.confidence, evidence });
+      ops.push({ op: "complete", task_id: a.task_id, ...target, confidence: a.confidence, evidence });
       touched.add(a.task_id);
       continue;
     }
@@ -280,10 +337,10 @@ export function planOps(actions: ExtractedAction[], input: ExtractionInput): DbO
     const op: Extract<DbOp, { op: "update" }> = {
       op: "update",
       task_id: a.task_id,
+      ...target,
       confidence: a.confidence,
       evidence,
     };
-    const current = input.openTasks.find((t) => t.id === a.task_id)!;
     let changed = false;
     if (a.title && a.title !== current.title) {
       op.title = a.title;

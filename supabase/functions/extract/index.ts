@@ -10,6 +10,7 @@ import {
   type MemberInfo,
   type OpenTask,
   planOps,
+  type ProjectInfo,
 } from "../_shared/extraction.ts";
 import { isSmallTalk } from "../_shared/smalltalk.ts";
 
@@ -33,8 +34,8 @@ async function processProject(sb: DB, projectId: number) {
     name: string;
   };
   const chats = must(
-    await sb.from("chats").select("id, name, kind").eq("project_id", projectId),
-  ) as ChatInfo[];
+    await sb.from("chats").select("id, name, kind, line_group_id").eq("project_id", projectId),
+  ) as (ChatInfo & { line_group_id: string })[];
   const chatIds = chats.map((c) => c.id);
 
   const pending = must(
@@ -66,11 +67,19 @@ async function processProject(sb: DB, projectId: number) {
   const members: MemberInfo[] = memberRows.map((m) => ({ id: m.line_user_id, name: m.display_name }));
   const nameOf = new Map(members.map((m) => [m.id, m.name]));
 
-  const openTasks = must(
-    await sb.from("tasks").select("id, title, assignee_name, due_date, status")
-      .eq("project_id", projectId).in("status", ["open", "candidate"]).order("id"),
-  ) as {
+  // 通知先グループは全案件の話をする横断チャットなので、全案件の未完了タスクを見せる
+  const notifyGroup = must(
+    await sb.from("settings").select("value").eq("key", "notify_group_id").maybeSingle(),
+  ) as { value: string } | null;
+  const isHub = !!notifyGroup && chats.some((c) => c.line_group_id === notifyGroup.value);
+  const projects = isHub ? must(await sb.from("projects").select("id, name").order("id")) as ProjectInfo[] : undefined;
+
+  let taskQuery = sb.from("tasks").select("id, project_id, title, assignee_name, due_date, status")
+    .in("status", ["open", "candidate"]).order("id");
+  if (!isHub) taskQuery = taskQuery.eq("project_id", projectId);
+  const openTasks = must(await taskQuery) as {
     id: number;
+    project_id: number;
     title: string;
     assignee_name: string | null;
     due_date: string | null;
@@ -90,7 +99,7 @@ async function processProject(sb: DB, projectId: number) {
   const input = {
     today: todayJst(),
     projectName: project.name,
-    chats,
+    chats: chats.map(({ id, name, kind }) => ({ id, name, kind })),
     members,
     openTasks: openTasks.map((t) => ({
       id: t.id,
@@ -98,7 +107,9 @@ async function processProject(sb: DB, projectId: number) {
       assignee: t.assignee_name,
       due: t.due_date,
       status: t.status,
+      ...(isHub ? { projectId: t.project_id } : {}),
     })),
+    projects,
     context: context.map(toMessage),
     messages: pending.map(toMessage),
   };
