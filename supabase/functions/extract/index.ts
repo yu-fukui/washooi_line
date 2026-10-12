@@ -72,7 +72,9 @@ async function processProject(sb: DB, projectId: number) {
     await sb.from("settings").select("value").eq("key", "notify_group_id").maybeSingle(),
   ) as { value: string } | null;
   const isHub = !!notifyGroup && chats.some((c) => c.line_group_id === notifyGroup.value);
-  const projects = isHub ? must(await sb.from("projects").select("id, name").order("id")) as ProjectInfo[] : undefined;
+  const projects = isHub
+    ? must(await sb.from("projects").select("id, name").eq("archived", false).order("id")) as ProjectInfo[]
+    : undefined;
 
   let taskQuery = sb.from("tasks").select("id, project_id, title, assignee_name, due_date, status")
     .in("status", ["open", "candidate"]).order("id");

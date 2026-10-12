@@ -95,7 +95,10 @@ const label = (text: string) => (text.length > 20 ? text.slice(0, 19) + "…" : 
 
 /** 案件（クライアント）を選ぶクイックリプライ。期限が近いタスクがある案件から順に並べる */
 async function projectPicker(sb: DB, page: number): Promise<LineMessage> {
-  const projects = must(await sb.from("projects").select("id, name").order("name")) as { id: number; name: string }[];
+  const projects = must(await sb.from("projects").select("id, name").eq("archived", false).order("name")) as {
+    id: number;
+    name: string;
+  }[];
   if (projects.length === 0) return { type: "text", text: "案件はまだありません。" };
   const open = await loadOpenTasks(sb);
   const count = new Map<string, number>();
