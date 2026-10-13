@@ -30,6 +30,7 @@ export interface OpenTask {
 export interface ProjectInfo {
   id: number;
   name: string;
+  description?: string | null; // どんな話をこの案件に入れるか（例: 小西さん自身のタスク）
 }
 
 export interface ChatMessage {
@@ -98,6 +99,7 @@ export const SYSTEM_PROMPT = `あなたは制作会社の案件チャットを�
 「案件一覧」が示されたときは、社内の横断チャットです。会話はどの案件の話でもありえます。
 - 未完了タスクは案件ごとに並んでいる。案件名や内容の言い回し（略称・表記ゆれ）から対応するタスクを探して update / complete する
 - create では project に作成先の案件名を案件一覧の表記のまま入れる。どの案件か分からなければ null
+- 案件一覧に説明（「：」の後）がある案件は、その説明に合う話を文脈から判断して入れる（例: 誰か個人の予定や手続きで、取引先の案件に属さないもの）
 - 案件一覧がないときは project は常に null
 
 該当する操作がなければ actions は空配列にしてください。`;
@@ -158,7 +160,7 @@ export function buildUserPrompt(input: ExtractionInput): string {
   };
   if (input.projects) {
     lines.push("## 案件一覧");
-    for (const p of input.projects) lines.push(`- ${p.name}`);
+    for (const p of input.projects) lines.push(`- ${p.name}${p.description ? `：${p.description}` : ""}`);
     lines.push("");
     lines.push("## 未完了タスク（案件ごと）");
     if (input.openTasks.length === 0) lines.push("(なし)");

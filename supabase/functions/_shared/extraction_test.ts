@@ -191,6 +191,7 @@ const hub: ExtractionInput = {
     { id: 1, name: "社内" },
     { id: 5, name: "エース" },
     { id: 11, name: "止水板LP" },
+    { id: 18, name: "小西", description: "小西さん自身のタスク" },
   ],
   openTasks: [
     { id: 5, title: "Instagramアカウント作成", assignee: null, due: null, status: "open", projectId: 5 },
@@ -201,6 +202,7 @@ const hub: ExtractionInput = {
 Deno.test("buildUserPrompt: 横断チャットでは案件ごとにタスクを並べる", () => {
   const prompt = buildUserPrompt(hub);
   assertStringIncludes(prompt, "## 案件一覧");
+  assertStringIncludes(prompt, "- 小西：小西さん自身のタスク");
   assertStringIncludes(prompt, "### 止水板LP\n- task_id=16 LP制作");
   assertStringIncludes(prompt, "### エース\n- task_id=5 Instagramアカウント作成");
   assert(!buildUserPrompt(input).includes("案件一覧"));
