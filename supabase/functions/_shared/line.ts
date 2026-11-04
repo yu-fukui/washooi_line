@@ -12,7 +12,13 @@ export interface LineEvent {
   timestamp: number;
   replyToken?: string;
   source: { type: "user" | "group" | "room"; userId?: string; groupId?: string; roomId?: string };
-  message?: { type: string; id: string; text?: string };
+  message?: {
+    type: string;
+    id: string;
+    text?: string;
+    // isSelf はボット自身へのメンション
+    mention?: { mentionees: { index: number; length: number; isSelf?: boolean }[] };
+  };
   postback?: { data: string };
   unsend?: { messageId: string };
 }

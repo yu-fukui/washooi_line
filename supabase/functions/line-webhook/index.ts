@@ -1,4 +1,5 @@
 // LINE Webhook: 案件チャットの会話を保存し、メインチャットのコマンド・ボタン操作に応答する
+import { botCall } from "../_shared/botcall.ts";
 import { parseCommand } from "../_shared/commands.ts";
 import { type DB, db, getSetting } from "../_shared/db.ts";
 import { env } from "../_shared/env.ts";
@@ -31,6 +32,10 @@ async function handleEvents(sb: DB, events: LineEvent[]) {
       } else if (chatId === notifyGroupId && isMainOperation(event)) {
         // 通知先グループ: ボタンと決まった形のコマンドはメインチャットと同じく処理する
         await handleMainEvent(sb, event, chatId, { instructions: false });
+      } else if (chatId === notifyGroupId && botCall(event.message)) {
+        // ボット宛ての発言（@メンション・「ボット、」など）は普通の文章の指示として受け付ける
+        const text = botCall(event.message)!;
+        await handleMainEvent(sb, { ...event, message: { ...event.message!, text } }, chatId);
       } else if (groupId) {
         // 通知先グループのそれ以外の会話は、案件チャットとして記録・解析する
         await handleProjectEvent(sb, event, groupId);
